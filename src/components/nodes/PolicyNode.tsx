@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useState, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { PolicyNodeData, PolicyOutput } from '../../types/workflow';
 
@@ -11,8 +11,8 @@ interface ExtendedPolicyNodeData extends PolicyNodeData {
   isLoading?: boolean;
   isEdgeHovered?: boolean;
   isWaitingForDecision?: boolean;
-  connectedOutputs?: Set<string>; // IDs des sorties déjà connectées
-  executedOutputId?: string; // ID de la sortie choisie lors de l'exécution
+  connectedOutputs?: Set<string>;
+  executedOutputId?: string;
   onPolicyDecision?: (nodeId: string, outputId: string) => void;
   onLabelChange?: (nodeId: string, newLabel: string) => void;
   onOutputsChange?: (nodeId: string, outputs: PolicyOutput[]) => void;
@@ -22,6 +22,28 @@ function PolicyNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyNod
   const [isEditing, setIsEditing] = useState(false);
   const [label, setLabel] = useState(data.label);
   const [isEditingOutputs, setIsEditingOutputs] = useState(false);
+  const [outputPositions, setOutputPositions] = useState<Record<string, number>>({});
+  const outputRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const nodeRef = useRef<HTMLDivElement>(null);
+
+  // Calculer les positions des handles après le rendu
+  useEffect(() => {
+    if (nodeRef.current) {
+      const nodeRect = nodeRef.current.getBoundingClientRect();
+      const positions: Record<string, number> = {};
+
+      data.outputs.forEach((output) => {
+        const rowEl = outputRefs.current[output.id];
+        if (rowEl) {
+          const rowRect = rowEl.getBoundingClientRect();
+          // Position relative au nœud (en pixels depuis le haut du nœud)
+          positions[output.id] = rowRect.top - nodeRect.top + rowRect.height / 2;
+        }
+      });
+
+      setOutputPositions(positions);
+    }
+  }, [data.outputs, data.outputs.length]);
 
   const handleDoubleClick = useCallback(() => {
     setIsEditing(true);
@@ -67,7 +89,7 @@ function PolicyNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyNod
   }, [id, data]);
 
   const handleRemoveOutput = useCallback((outputId: string) => {
-    if (data.outputs.length <= 2) return; // Minimum 2 outputs
+    if (data.outputs.length <= 2) return;
     if (data.onOutputsChange) {
       data.onOutputsChange(id, data.outputs.filter(o => o.id !== outputId));
     }
@@ -86,6 +108,7 @@ function PolicyNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyNod
 
   return (
     <div
+      ref={nodeRef}
       className={`policy-node ${selected ? 'selected' : ''} ${data.isActive ? 'active' : ''} ${data.isExecuted ? 'executed' : ''} ${data.isLoading ? 'loading' : ''} ${data.isEdgeHovered ? 'edge-hovered' : ''} ${data.isWaitingForDecision ? 'waiting-decision' : ''}`}
       style={{ borderColor: nodeColor, backgroundColor: nodeColor }}
     >
@@ -104,6 +127,28 @@ function PolicyNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyNod
         isConnectableStart={true}
         isConnectableEnd={true}
       />
+
+      {/* Handles de sortie - positionnés dynamiquement */}
+      {data.outputs.map((output) => {
+        const isConnected = connectedOutputs.has(output.id);
+        const topPosition = outputPositions[output.id];
+
+        return (
+          <Handle
+            key={output.id}
+            type="source"
+            position={Position.Right}
+            id={output.id}
+            className={`policy-output-handle ${isConnected ? 'connected' : ''}`}
+            isConnectableStart={!isConnected}
+            isConnectableEnd={false}
+            style={{
+              top: topPosition !== undefined ? `${topPosition}px` : undefined,
+              opacity: topPosition !== undefined ? 1 : 0,
+            }}
+          />
+        );
+      })}
 
       {/* Spinner de chargement */}
       {data.isLoading && !data.isWaitingForDecision && (
@@ -134,7 +179,7 @@ function PolicyNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyNod
           )}
         </div>
 
-        {/* Liste des sorties avec handles */}
+        {/* Liste des sorties */}
         <div className="policy-outputs">
           {data.outputs.map((output) => {
             const isConnected = connectedOutputs.has(output.id);
@@ -144,6 +189,7 @@ function PolicyNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyNod
             return (
               <div
                 key={output.id}
+                ref={(el) => { outputRefs.current[output.id] = el; }}
                 className={`policy-output-row ${isConnected ? 'connected' : 'disconnected'} ${isExecutedOutput ? 'executed' : ''}`}
               >
                 <span className="policy-output-label">{output.label}</span>
@@ -161,15 +207,8 @@ function PolicyNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyNod
                   </button>
                 )}
 
-                {/* Handle de sortie */}
-                <Handle
-                  type="source"
-                  position={Position.Right}
-                  id={output.id}
-                  className={`policy-output-handle ${isConnected ? 'connected' : ''}`}
-                  isConnectableStart={!isConnected}
-                  isConnectableEnd={false}
-                />
+                {/* Indicateur de handle */}
+                <div className={`policy-output-handle-indicator ${isConnected ? 'connected' : ''}`} />
               </div>
             );
           })}

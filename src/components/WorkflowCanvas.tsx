@@ -18,7 +18,7 @@ import 'reactflow/dist/style.css';
 
 const GRID_SIZE = 20;
 const EXECUTED_GREEN = '#22c55e';
-const SIMULATION_DELAY = 2000; // 2 secondes de délai entre chaque étape
+const SIMULATION_DELAY = 1000; // 1 secondes de délai entre chaque étape
 
 import { nodeTypes } from './nodes';
 import { edgeTypes, FloatingConnectionLine } from './edges';
@@ -47,7 +47,7 @@ export function WorkflowCanvas() {
   const [executedNodes, setExecutedNodes] = useState<Set<string>>(new Set());
   const [activeNodes, setActiveNodes] = useState<Set<string>>(new Set());
   const [executedEdges, setExecutedEdges] = useState<Set<string>>(new Set());
-  const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
+  const [animatingEdges, setAnimatingEdges] = useState<Set<string>>(new Set());
   const [waitingForDecision, setWaitingForDecision] = useState<Set<string>>(new Set());
   const simulationTimeouts = useRef<number[]>([]);
 
@@ -123,11 +123,6 @@ export function WorkflowCanvas() {
         linkedNodes.forEach((id) => next.delete(id));
         return next;
       });
-      setLoadingNodes((prev) => {
-        const next = new Set(prev);
-        linkedNodes.forEach((id) => next.delete(id));
-        return next;
-      });
       setWaitingForDecision((prev) => {
         const next = new Set(prev);
         linkedNodes.forEach((id) => next.delete(id));
@@ -143,6 +138,11 @@ export function WorkflowCanvas() {
         linkedEdgeIds.forEach((id) => next.delete(id));
         return next;
       });
+      setAnimatingEdges((prev) => {
+        const next = new Set(prev);
+        linkedEdgeIds.forEach((id) => next.delete(id));
+        return next;
+      });
     },
     [edges, getLinkedNodes]
   );
@@ -151,13 +151,6 @@ export function WorkflowCanvas() {
   const handleExecuteNode = useCallback(
     (nodeIdToExecute: string) => {
       const nodeToExecute = nodes.find((n) => n.id === nodeIdToExecute);
-
-      // Retirer du loading si présent
-      setLoadingNodes((prev) => {
-        const next = new Set(prev);
-        next.delete(nodeIdToExecute);
-        return next;
-      });
 
       // Vérifier si c'est un nœud policy - il doit attendre une décision manuelle
       if (nodeToExecute?.type === 'policy') {
@@ -173,27 +166,32 @@ export function WorkflowCanvas() {
         return next;
       });
 
-      // Trouver les edges sortants et les marquer comme exécutés
+      // Trouver tous les edges sortants
       const outgoingEdges = edges.filter((e) => e.source === nodeIdToExecute);
-      const outgoingEdgeIds = outgoingEdges.map((e) => e.id);
-      setExecutedEdges((prev) => new Set([...prev, ...outgoingEdgeIds]));
 
-      // Trouver les nœuds suivants (exclure les triggers qui restent manuels)
-      const nextNodeIds = outgoingEdges
-        .map((e) => e.target)
-        .filter((targetId) => {
-          const targetNode = nodes.find((n) => n.id === targetId);
-          return targetNode?.type !== 'trigger';
-        });
+      if (outgoingEdges.length > 0) {
+        // Démarrer l'animation sur TOUS les edges sortants
+        const outgoingEdgeIds = outgoingEdges.map((e) => e.id);
+        setAnimatingEdges((prev) => new Set([...prev, ...outgoingEdgeIds]));
 
-      if (nextNodeIds.length > 0) {
-        // Mettre les nœuds suivants en état de chargement
-        setLoadingNodes((prev) => new Set([...prev, ...nextNodeIds]));
+        // Programmer la fin de l'animation pour chaque edge
+        outgoingEdges.forEach((edge) => {
+          const targetNode = nodes.find((n) => n.id === edge.target);
+          const isTargetTrigger = targetNode?.type === 'trigger';
 
-        // Programmer l'exécution des nœuds suivants après le délai
-        nextNodeIds.forEach((nextNodeId) => {
           const timeoutId = window.setTimeout(() => {
-            handleExecuteNode(nextNodeId);
+            // Marquer l'edge comme exécuté (fin de l'animation)
+            setAnimatingEdges((prev) => {
+              const next = new Set(prev);
+              next.delete(edge.id);
+              return next;
+            });
+            setExecutedEdges((prev) => new Set([...prev, edge.id]));
+
+            // Exécuter le nœud suivant SAUF si c'est un trigger
+            if (!isTargetTrigger) {
+              handleExecuteNode(edge.target);
+            }
           }, SIMULATION_DELAY);
           simulationTimeouts.current.push(timeoutId);
         });
@@ -215,25 +213,33 @@ export function WorkflowCanvas() {
       // Marquer comme exécuté
       setExecutedNodes((prev) => new Set([...prev, nodeId]));
 
-      // Trouver l'edge correspondant à la sortie choisie et le marquer comme exécuté
+      // Trouver l'edge correspondant à la sortie choisie
       const chosenEdge = edges.find(
         (e) => e.source === nodeId && e.sourceHandle === outputId
       );
       if (chosenEdge) {
-        setExecutedEdges((prev) => new Set([...prev, chosenEdge.id]));
-
-        // Trouver le nœud suivant
         const targetNode = nodes.find((n) => n.id === chosenEdge.target);
-        if (targetNode && targetNode.type !== 'trigger') {
-          // Mettre en état de chargement
-          setLoadingNodes((prev) => new Set([...prev, chosenEdge.target]));
+        const isTargetTrigger = targetNode?.type === 'trigger';
 
-          // Programmer l'exécution après le délai
-          const timeoutId = window.setTimeout(() => {
+        // Démarrer l'animation sur l'edge
+        setAnimatingEdges((prev) => new Set([...prev, chosenEdge.id]));
+
+        // Programmer la fin de l'animation
+        const timeoutId = window.setTimeout(() => {
+          // Marquer l'edge comme exécuté
+          setAnimatingEdges((prev) => {
+            const next = new Set(prev);
+            next.delete(chosenEdge.id);
+            return next;
+          });
+          setExecutedEdges((prev) => new Set([...prev, chosenEdge.id]));
+
+          // Exécuter le nœud suivant SAUF si c'est un trigger
+          if (!isTargetTrigger) {
             handleExecuteNode(chosenEdge.target);
-          }, SIMULATION_DELAY);
-          simulationTimeouts.current.push(timeoutId);
-        }
+          }
+        }, SIMULATION_DELAY);
+        simulationTimeouts.current.push(timeoutId);
       }
     },
     [edges, nodes, handleExecuteNode]
@@ -262,7 +268,7 @@ export function WorkflowCanvas() {
     setExecutedNodes(new Set());
     setActiveNodes(new Set());
     setExecutedEdges(new Set());
-    setLoadingNodes(new Set());
+    setAnimatingEdges(new Set());
     setWaitingForDecision(new Set());
   }, []);
 
@@ -325,7 +331,6 @@ export function WorkflowCanvas() {
         ...node.data,
         isExecuted: executedNodes.has(node.id),
         isActive: activeNodes.has(node.id),
-        isLoading: loadingNodes.has(node.id),
         isEdgeHovered: hoveredEdgeNodes.has(node.id),
         isWaitingForDecision: waitingForDecision.has(node.id),
         connectedOutputs: node.type === 'policy' ? policyConnectedOutputs.get(node.id) : undefined,
@@ -336,12 +341,13 @@ export function WorkflowCanvas() {
         onOutputsChange: handleOutputsChange,
       },
     }));
-  }, [nodes, executedNodes, activeNodes, loadingNodes, hoveredEdgeNodes, waitingForDecision, policyConnectedOutputs, handleExecuteNode, handleTrigger, handleLabelChange, handlePolicyDecision, handleOutputsChange]);
+  }, [nodes, executedNodes, activeNodes, hoveredEdgeNodes, waitingForDecision, policyConnectedOutputs, handleExecuteNode, handleTrigger, handleLabelChange, handlePolicyDecision, handleOutputsChange]);
 
-  // Edges enrichis avec style selon état (sélectionné, exécuté, normal)
+  // Edges enrichis avec style selon état (sélectionné, exécuté, animé)
   const edgesWithSimulation = useMemo(() => {
     return edges.map((edge) => {
       const isExecuted = executedEdges.has(edge.id);
+      const isAnimating = animatingEdges.has(edge.id);
       const isSelected = edge.selected;
 
       let strokeColor = '#FF8C00'; // Orange par défaut
@@ -354,12 +360,14 @@ export function WorkflowCanvas() {
       return {
         ...edge,
         type: 'floating',
-        animated: !isExecuted && !isSelected,
+        animated: !isExecuted && !isSelected && !isAnimating,
         interactionWidth: 20, // Zone de détection élargie
         reconnectable: true,
         data: {
           ...edge.data,
           isExecuted,
+          isAnimating,
+          animationDuration: SIMULATION_DELAY,
         },
         style: {
           stroke: strokeColor,
@@ -367,7 +375,7 @@ export function WorkflowCanvas() {
         },
       };
     });
-  }, [edges, executedEdges]);
+  }, [edges, executedEdges, animatingEdges]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -707,7 +715,7 @@ export function WorkflowCanvas() {
         onExport={handleExport}
         onImport={handleImport}
         onResetSimulation={handleResetSimulation}
-        isSimulationActive={executedNodes.size > 0 || activeNodes.size > 0 || loadingNodes.size > 0 || waitingForDecision.size > 0}
+        isSimulationActive={executedNodes.size > 0 || activeNodes.size > 0 || animatingEdges.size > 0 || waitingForDecision.size > 0}
       />
 
       <div className="canvas-wrapper" ref={reactFlowWrapper}>

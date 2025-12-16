@@ -529,7 +529,7 @@
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.1);
   position: relative;
-  margin-right: 12px;
+  margin-right: 16px;
 }
 
 .policy-output-row.disconnected {
@@ -573,33 +573,52 @@
   background: #16a34a;
 }
 
-/* Handle de sortie positionné à droite de chaque ligne */
-.policy-output-row .react-flow__handle {
+/* Indicateur visuel du handle */
+.policy-output-handle-indicator {
   position: absolute;
-  right: -20px;
+  right: -12px;
   top: 50%;
   transform: translateY(-50%);
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #fff;
-  border: 2px solid #9333ea;
-  opacity: 1;
-  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  pointer-events: none;
 }
 
-.policy-output-row .react-flow__handle.connected {
+.policy-output-handle-indicator.connected {
   background: #9333ea;
   border-color: #fff;
 }
 
-.policy-output-row.disconnected .react-flow__handle {
-  opacity: 0.5;
+/* Handles de sortie positionnés dynamiquement */
+.policy-node .policy-output-handle {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #9333ea;
+  right: -6px;
+  pointer-events: auto;
+  cursor: crosshair;
+  transition: transform 0.15s ease, background 0.15s ease;
 }
 
-.policy-node.selected .policy-output-row .react-flow__handle,
-.policy-node.edge-hovered .policy-output-row .react-flow__handle {
-  opacity: 1;
+.policy-node .policy-output-handle:hover {
+  transform: scale(1.3);
+  background: #9333ea;
+  border-color: #fff;
+}
+
+.policy-node .policy-output-handle.connected {
+  background: #9333ea;
+  border-color: #fff;
+  cursor: not-allowed;
+}
+
+.policy-node .policy-output-handle.connected:hover {
+  transform: scale(1);
 }
 
 /* Éditeur de sorties pour Policy */
