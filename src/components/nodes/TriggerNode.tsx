@@ -1,10 +1,11 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { BaseNodeData } from '../../types/workflow';
 
 interface TriggerNodeProps extends NodeProps<BaseNodeData> {
   data: BaseNodeData & {
     onTrigger?: (nodeId: string) => void;
+    onLabelChange?: (nodeId: string, newLabel: string) => void;
     isActive?: boolean;
   };
 }
@@ -12,11 +13,41 @@ interface TriggerNodeProps extends NodeProps<BaseNodeData> {
 const TRIGGER_GREEN = '#22c55e';
 
 function TriggerNodeComponent({ id, data, selected }: TriggerNodeProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [label, setLabel] = useState(data.label);
+
   const handleClick = useCallback(() => {
     if (data.onTrigger) {
       data.onTrigger(id);
     }
   }, [id, data]);
+
+  const handleDoubleClick = useCallback(() => {
+    setIsEditing(true);
+  }, []);
+
+  const handleBlur = useCallback(() => {
+    setIsEditing(false);
+    if (data.onLabelChange) {
+      data.onLabelChange(id, label);
+    }
+  }, [id, data, label]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        setIsEditing(false);
+        if (data.onLabelChange) {
+          data.onLabelChange(id, label);
+        }
+      }
+      if (e.key === 'Escape') {
+        setLabel(data.label);
+        setIsEditing(false);
+      }
+    },
+    [id, data, label]
+  );
 
   return (
     <div
@@ -39,7 +70,21 @@ function TriggerNodeComponent({ id, data, selected }: TriggerNodeProps) {
             <path d="M8 5v14l11-7z" />
           </svg>
         </button>
-        <span className="trigger-label">{data.label}</span>
+        {isEditing ? (
+          <input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            className="trigger-label-input"
+          />
+        ) : (
+          <span className="trigger-label" onDoubleClick={handleDoubleClick}>
+            {label}
+          </span>
+        )}
       </div>
     </div>
   );

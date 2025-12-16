@@ -4,12 +4,15 @@ import ReactFlow, {
   Background,
   MiniMap,
   addEdge,
+  reconnectEdge,
   useNodesState,
   useEdgesState,
   MarkerType,
+  ConnectionMode,
   type Connection,
   type ReactFlowInstance,
   type Node,
+  type Edge,
   BackgroundVariant,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -18,6 +21,7 @@ const GRID_SIZE = 20;
 const EXECUTED_GREEN = '#22c55e';
 
 import { nodeTypes } from './nodes';
+import { edgeTypes, FloatingConnectionLine } from './edges';
 import { Sidebar } from './Sidebar';
 import { useWorkflowStorage } from '../hooks/useWorkflowStorage';
 import type { WorkflowNodeData } from '../types/workflow';
@@ -36,12 +40,16 @@ export function WorkflowCanvas() {
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
   const connectingFrom = useRef<{ nodeId: string; handleId: string | null } | null>(null);
   const clipboard = useRef<Node<WorkflowNodeData>[]>([]);
+  const edgeReconnectSuccessful = useRef(true);
   const { saveWorkflow, loadWorkflow, clearWorkflow } = useWorkflowStorage();
 
   // État de simulation
   const [executedNodes, setExecutedNodes] = useState<Set<string>>(new Set());
   const [activeNodes, setActiveNodes] = useState<Set<string>>(new Set());
   const [executedEdges, setExecutedEdges] = useState<Set<string>>(new Set());
+
+  // État pour le survol des edges
+  const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
 
   // Charger le workflow au démarrage
   useEffect(() => {
@@ -93,6 +101,28 @@ export function WorkflowCanvas() {
     setExecutedEdges(new Set());
   }, []);
 
+  // Mettre à jour le label d'un nœud
+  const handleLabelChange = useCallback(
+    (nodeId: string, newLabel: string) => {
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === nodeId
+            ? { ...node, data: { ...node.data, label: newLabel } }
+            : node
+        )
+      );
+    },
+    [setNodes]
+  );
+
+  // Trouver les nœuds connectés à l'edge survolé
+  const hoveredEdgeNodes = useMemo(() => {
+    if (!hoveredEdge) return new Set<string>();
+    const edge = edges.find((e) => e.id === hoveredEdge);
+    if (!edge) return new Set<string>();
+    return new Set([edge.source, edge.target]);
+  }, [hoveredEdge, edges]);
+
   // Nœuds enrichis avec état de simulation et callbacks
   const nodesWithSimulation = useMemo(() => {
     return nodes.map((node) => ({
@@ -101,26 +131,40 @@ export function WorkflowCanvas() {
         ...node.data,
         isExecuted: executedNodes.has(node.id),
         isActive: activeNodes.has(node.id),
+        isEdgeHovered: hoveredEdgeNodes.has(node.id),
         onExecute: handleExecuteNode,
         onTrigger: handleExecuteNode,
+        onLabelChange: handleLabelChange,
       },
     }));
-  }, [nodes, executedNodes, activeNodes, handleExecuteNode]);
+  }, [nodes, executedNodes, activeNodes, hoveredEdgeNodes, handleExecuteNode, handleLabelChange]);
 
-  // Edges enrichis avec style vert si exécutés
+  // Edges enrichis avec style selon état (sélectionné, exécuté, normal)
   const edgesWithSimulation = useMemo(() => {
     return edges.map((edge) => {
       const isExecuted = executedEdges.has(edge.id);
+      const isSelected = edge.selected;
+
+      let strokeColor = '#FF8C00'; // Orange par défaut
+      if (isSelected) {
+        strokeColor = '#fff'; // Blanc si sélectionné
+      } else if (isExecuted) {
+        strokeColor = EXECUTED_GREEN; // Vert si exécuté
+      }
+
       return {
         ...edge,
-        animated: !isExecuted,
+        type: 'floating',
+        animated: !isExecuted && !isSelected,
+        interactionWidth: 20, // Zone de détection élargie
+        reconnectable: true,
         style: {
-          stroke: isExecuted ? EXECUTED_GREEN : '#FF8C00',
-          strokeWidth: 2,
+          stroke: strokeColor,
+          strokeWidth: isSelected ? 3 : 2,
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: isExecuted ? EXECUTED_GREEN : '#FF8C00',
+          color: strokeColor,
         },
       };
     });
@@ -129,6 +173,30 @@ export function WorkflowCanvas() {
   const onConnect = useCallback(
     (params: Connection) => {
       setEdges((eds) => addEdge(params, eds));
+    },
+    [setEdges]
+  );
+
+  // Gestion de la reconnexion des edges
+  const onReconnectStart = useCallback(() => {
+    edgeReconnectSuccessful.current = false;
+  }, []);
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      edgeReconnectSuccessful.current = true;
+      setEdges((eds) => reconnectEdge(oldEdge, newConnection, eds));
+    },
+    [setEdges]
+  );
+
+  const onReconnectEnd = useCallback(
+    (_: MouseEvent | TouchEvent, edge: Edge) => {
+      if (!edgeReconnectSuccessful.current) {
+        // Si la reconnexion a échoué (lâché dans le vide), supprimer l'edge
+        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+      }
+      edgeReconnectSuccessful.current = true;
     },
     [setEdges]
   );
@@ -148,23 +216,49 @@ export function WorkflowCanvas() {
         return;
       }
 
-      // Vérifier si on a lâché sur un nœud existant (dans ce cas onConnect gère déjà)
-      const targetIsPane = (event.target as Element).classList.contains('react-flow__pane');
+      const target = event.target as Element;
+      const targetIsPane = target.classList.contains('react-flow__pane');
 
-      if (targetIsPane) {
-        // Obtenir la position du curseur
-        const clientX = 'changedTouches' in event ? event.changedTouches[0].clientX : event.clientX;
-        const clientY = 'changedTouches' in event ? event.changedTouches[0].clientY : event.clientY;
+      // Obtenir la position du curseur
+      const clientX = 'changedTouches' in event ? event.changedTouches[0].clientX : event.clientX;
+      const clientY = 'changedTouches' in event ? event.changedTouches[0].clientY : event.clientY;
 
-        // Convertir les coordonnées écran en coordonnées du flow
-        const position = reactFlowInstance.current.screenToFlowPosition({
-          x: clientX,
-          y: clientY,
-        });
+      // Convertir les coordonnées écran en coordonnées du flow
+      const flowPosition = reactFlowInstance.current.screenToFlowPosition({
+        x: clientX,
+        y: clientY,
+      });
 
+      // Chercher si on a lâché sur un nœud existant
+      const targetNode = nodes.find((n) => {
+        if (n.id === connectingFrom.current?.nodeId) return false; // Pas le même nœud
+        const nodeX = n.position.x;
+        const nodeY = n.position.y;
+        const nodeW = n.width ?? 120;
+        const nodeH = n.height ?? 80;
+        return (
+          flowPosition.x >= nodeX &&
+          flowPosition.x <= nodeX + nodeW &&
+          flowPosition.y >= nodeY &&
+          flowPosition.y <= nodeY + nodeH
+        );
+      });
+
+      if (targetNode) {
+        // Créer un edge vers le nœud cible
+        const newEdge = {
+          id: `edge_${connectingFrom.current.nodeId}_${targetNode.id}_${Date.now()}`,
+          source: connectingFrom.current.nodeId,
+          sourceHandle: connectingFrom.current.handleId,
+          target: targetNode.id,
+        };
+        setEdges((eds) => addEdge(newEdge, eds));
+      } else if (targetIsPane) {
         // Snap to grid
-        position.x = Math.round(position.x / GRID_SIZE) * GRID_SIZE;
-        position.y = Math.round(position.y / GRID_SIZE) * GRID_SIZE;
+        const position = {
+          x: Math.round(flowPosition.x / GRID_SIZE) * GRID_SIZE,
+          y: Math.round(flowPosition.y / GRID_SIZE) * GRID_SIZE,
+        };
 
         // Créer le nouveau nœud
         const newNodeId = getNodeId();
@@ -181,7 +275,6 @@ export function WorkflowCanvas() {
           source: connectingFrom.current.nodeId,
           sourceHandle: connectingFrom.current.handleId,
           target: newNodeId,
-          targetHandle: 'left', // Connecter au handle gauche par défaut
         };
 
         setNodes((nds) => [...nds, newNode]);
@@ -190,11 +283,20 @@ export function WorkflowCanvas() {
 
       connectingFrom.current = null;
     },
-    [setNodes, setEdges]
+    [nodes, setNodes, setEdges]
   );
 
   const onInit = useCallback((instance: ReactFlowInstance) => {
     reactFlowInstance.current = instance;
+  }, []);
+
+  // Gestion du survol des edges
+  const onEdgeMouseEnter = useCallback((_: React.MouseEvent, edge: Edge) => {
+    setHoveredEdge(edge.id);
+  }, []);
+
+  const onEdgeMouseLeave = useCallback(() => {
+    setHoveredEdge(null);
   }, []);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -404,17 +506,26 @@ export function WorkflowCanvas() {
           onConnect={onConnect}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
+          onReconnectStart={onReconnectStart}
+          onReconnect={onReconnect}
+          onReconnectEnd={onReconnectEnd}
           onInit={onInit}
+          onEdgeMouseEnter={onEdgeMouseEnter}
+          onEdgeMouseLeave={onEdgeMouseLeave}
           onDragOver={onDragOver}
           onDrop={onDrop}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          connectionLineComponent={FloatingConnectionLine}
           defaultEdgeOptions={{
+            type: 'floating',
             animated: true,
             markerEnd: { type: MarkerType.ArrowClosed, color: '#FF8C00' },
             style: { stroke: '#FF8C00', strokeWidth: 2 },
           }}
           snapToGrid={true}
           snapGrid={[GRID_SIZE, GRID_SIZE]}
+          connectionMode={ConnectionMode.Loose}
           fitView
           deleteKeyCode={['Backspace', 'Delete']}
         >

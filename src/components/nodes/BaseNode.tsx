@@ -7,7 +7,9 @@ const EXECUTED_GREEN = '#22c55e';
 interface ExtendedNodeData extends BaseNodeData {
   isActive?: boolean;
   isExecuted?: boolean;
+  isEdgeHovered?: boolean;
   onExecute?: (nodeId: string) => void;
+  onLabelChange?: (nodeId: string, newLabel: string) => void;
 }
 
 interface BaseNodeProps extends NodeProps<ExtendedNodeData> {
@@ -24,21 +26,25 @@ function BaseNodeComponent({ id, data, selected, color = '#FF8C00' }: BaseNodePr
 
   const handleBlur = useCallback(() => {
     setIsEditing(false);
-    data.label = label;
-  }, [data, label]);
+    if (data.onLabelChange) {
+      data.onLabelChange(id, label);
+    }
+  }, [id, data, label]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter') {
         setIsEditing(false);
-        data.label = label;
+        if (data.onLabelChange) {
+          data.onLabelChange(id, label);
+        }
       }
       if (e.key === 'Escape') {
         setLabel(data.label);
         setIsEditing(false);
       }
     },
-    [data, label]
+    [id, data, label]
   );
 
   const handleExecute = useCallback(() => {
@@ -51,14 +57,14 @@ function BaseNodeComponent({ id, data, selected, color = '#FF8C00' }: BaseNodePr
 
   return (
     <div
-      className={`base-node ${selected ? 'selected' : ''} ${data.isActive ? 'active' : ''} ${data.isExecuted ? 'executed' : ''}`}
+      className={`base-node ${selected ? 'selected' : ''} ${data.isActive ? 'active' : ''} ${data.isExecuted ? 'executed' : ''} ${data.isEdgeHovered ? 'edge-hovered' : ''}`}
       style={{ borderColor: nodeColor, backgroundColor: nodeColor }}
     >
-      {/* Handles sur les 4 côtés */}
-      <Handle type="target" position={Position.Top} id="top" />
-      <Handle type="target" position={Position.Left} id="left" />
-      <Handle type="source" position={Position.Bottom} id="bottom" />
-      <Handle type="source" position={Position.Right} id="right" />
+      {/* Handles sur les 4 côtés - chaque handle peut recevoir et envoyer */}
+      <Handle type="source" position={Position.Top} id="top" isConnectableStart={true} isConnectableEnd={true} />
+      <Handle type="source" position={Position.Left} id="left" isConnectableStart={true} isConnectableEnd={true} />
+      <Handle type="source" position={Position.Bottom} id="bottom" isConnectableStart={true} isConnectableEnd={true} />
+      <Handle type="source" position={Position.Right} id="right" isConnectableStart={true} isConnectableEnd={true} />
 
       {data.isActive && (
         <button
