@@ -276,26 +276,31 @@ export function FloatingEdge({
       const closestHandle = findClosestHandle(targetNodeUnderCursor, pos);
 
       const edgeId = id;
-      setEdges((edges) =>
-        edges.map((edge) => {
-          if (edge.id === edgeId) {
-            if (currentDragging === 'source') {
-              return {
-                ...edge,
-                source: targetNodeUnderCursor.id,
-                sourceHandle: closestHandle,
-              };
-            } else {
-              return {
-                ...edge,
-                target: targetNodeUnderCursor.id,
-                targetHandle: closestHandle,
-              };
-            }
-          }
-          return edge;
-        })
-      );
+      setEdges((edges) => {
+        // Trouver l'ancien edge
+        const oldEdge = edges.find(e => e.id === edgeId);
+        if (!oldEdge) return edges;
+
+        // Créer un nouvel edge avec un nouvel ID (reset du status)
+        const newSource = currentDragging === 'source' ? targetNodeUnderCursor.id : oldEdge.source;
+        const newSourceHandle = currentDragging === 'source' ? closestHandle : oldEdge.sourceHandle;
+        const newTarget = currentDragging === 'target' ? targetNodeUnderCursor.id : oldEdge.target;
+        const newTargetHandle = currentDragging === 'target' ? closestHandle : oldEdge.targetHandle;
+
+        const newEdge = {
+          id: `edge_${newSource}_${newTarget}_${Date.now()}`,
+          source: newSource,
+          sourceHandle: newSourceHandle,
+          target: newTarget,
+          targetHandle: newTargetHandle,
+          type: 'floating',
+        };
+
+        console.log(`[Edge Reconnect] Suppression de ${edgeId}, création de ${newEdge.id}`);
+
+        // Supprimer l'ancien edge et ajouter le nouveau
+        return [...edges.filter(e => e.id !== edgeId), newEdge];
+      });
     }
 
     setDragging(null);
@@ -320,12 +325,18 @@ export function FloatingEdge({
   }, [dragging]);
 
   if (!sourceNode || !targetNode) {
+    console.warn(`[FloatingEdge] Edge ${id} non affiché: sourceNode=${source} found=${!!sourceNode}, targetNode=${target} found=${!!targetNode}`);
     return null;
   }
 
   // Calculer les positions en tenant compte des handles définis
   const sourcePos = getHandlePosition(sourceNode, sourceHandleId, targetNode);
   const targetPos = getHandlePosition(targetNode, targetHandleId, sourceNode);
+
+  // Debug: log si positions sont à 0,0 (problème potentiel)
+  if (sourcePos.x === 0 && sourcePos.y === 0 && targetPos.x === 0 && targetPos.y === 0) {
+    console.warn(`[FloatingEdge] Edge ${id} positions à zéro - sourceNode.positionAbsolute:`, sourceNode.positionAbsolute, `targetNode.positionAbsolute:`, targetNode.positionAbsolute);
+  }
 
   // Positions pendant le drag
   const displaySx = dragging === 'source' && dragPos ? dragPos.x : sourcePos.x;

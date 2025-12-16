@@ -11,6 +11,7 @@ import ReactFlow, {
     type Node,
     type NodeChange,
     type NodePositionChange,
+    type OnSelectionChangeParams,
     type ReactFlowInstance,
     reconnectEdge,
     useEdgesState,
@@ -20,6 +21,7 @@ import 'reactflow/dist/style.css';
 import {nodeTypes} from './nodes';
 import {edgeTypes, FloatingConnectionLine} from './edges';
 import {Sidebar} from './Sidebar';
+import {DebugPanel} from './DebugPanel';
 import {useWorkflowStorage} from '../hooks/useWorkflowStorage';
 import type {PolicyNodeData, PolicyOutput, PolicyOutputNodeData, WorkflowNodeData} from '../types/workflow';
 
@@ -60,12 +62,105 @@ export function WorkflowCanvas() {
     // État pour le survol des edges
     const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
 
+    // État pour la sélection (debug panel)
+    const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+    const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+
+    // Fonction de nettoyage du workflow
+    const cleanupWorkflow = useCallback((workflowNodes: Node[], workflowEdges: Edge[]): { nodes: Node[]; edges: Edge[] } => {
+        const nodeIds = new Set(workflowNodes.map(n => n.id));
+        const VALID_HANDLES = ['top', 'bottom', 'left', 'right', 'output'];
+
+        // Filtrer les edges orphelins et en double
+        const filteredEdges = workflowEdges.filter((edge, index, self) => {
+            // Vérifier que source et target existent
+            const sourceExists = nodeIds.has(edge.source);
+            const targetExists = nodeIds.has(edge.target);
+
+            if (!sourceExists || !targetExists) {
+                console.log(`[Cleanup] Suppression edge orphelin: ${edge.id} (source: ${edge.source} exists: ${sourceExists}, target: ${edge.target} exists: ${targetExists})`);
+                return false;
+            }
+
+            // Vérifier les doublons (même source et même target)
+            const isDuplicate = self.findIndex(e =>
+                e.source === edge.source && e.target === edge.target
+            ) !== index;
+
+            if (isDuplicate) {
+                console.log(`[Cleanup] Suppression edge en double: ${edge.id} (${edge.source} → ${edge.target})`);
+                return false;
+            }
+
+            return true;
+        });
+
+        // Corriger les handles invalides et s'assurer que le type est 'floating'
+        const cleanedEdges = filteredEdges.map(edge => {
+            let { sourceHandle, targetHandle, type } = edge;
+            let modified = false;
+
+            // S'assurer que le type est 'floating'
+            if (type !== 'floating') {
+                if (type) {
+                    console.log(`[Cleanup] Correction type: ${type} → floating (edge: ${edge.id})`);
+                } else {
+                    console.log(`[Cleanup] Ajout type: floating (edge: ${edge.id})`);
+                }
+                type = 'floating';
+                modified = true;
+            }
+
+            // Corriger sourceHandle si invalide
+            if (sourceHandle && !VALID_HANDLES.includes(sourceHandle)) {
+                const base = sourceHandle.split('-')[0];
+                if (VALID_HANDLES.includes(base)) {
+                    console.log(`[Cleanup] Correction sourceHandle: ${sourceHandle} → ${base} (edge: ${edge.id})`);
+                    sourceHandle = base;
+                    modified = true;
+                } else {
+                    console.log(`[Cleanup] sourceHandle inconnu supprimé: ${sourceHandle} (edge: ${edge.id})`);
+                    sourceHandle = undefined;
+                    modified = true;
+                }
+            }
+
+            // Corriger targetHandle si invalide
+            if (targetHandle && !VALID_HANDLES.includes(targetHandle)) {
+                const base = targetHandle.split('-')[0];
+                if (VALID_HANDLES.includes(base)) {
+                    console.log(`[Cleanup] Correction targetHandle: ${targetHandle} → ${base} (edge: ${edge.id})`);
+                    targetHandle = base;
+                    modified = true;
+                } else {
+                    console.log(`[Cleanup] targetHandle inconnu supprimé: ${targetHandle} (edge: ${edge.id})`);
+                    targetHandle = undefined;
+                    modified = true;
+                }
+            }
+
+            if (modified) {
+                return { ...edge, sourceHandle, targetHandle, type };
+            }
+            return edge;
+        });
+
+        const removedCount = workflowEdges.length - filteredEdges.length;
+        if (removedCount > 0) {
+            console.log(`[Cleanup] ${removedCount} edge(s) supprimé(s)`);
+        }
+
+        return { nodes: workflowNodes, edges: cleanedEdges };
+    }, []);
+
     // Charger le workflow au démarrage
     useEffect(() => {
         const saved = loadWorkflow();
         if (saved) {
-            setNodes(saved.nodes as Node<WorkflowNodeData>[]);
-            setEdges(saved.edges);
+            // Nettoyer le workflow avant de le charger
+            const cleaned = cleanupWorkflow(saved.nodes as Node<WorkflowNodeData>[], saved.edges);
+            setNodes(cleaned.nodes as Node<WorkflowNodeData>[]);
+            setEdges(cleaned.edges);
             // Mettre à jour le compteur d'ID
             const maxId = saved.nodes.reduce((max, node) => {
                 const id = parseInt(node.id.replace('node_', ''), 10);
@@ -73,7 +168,7 @@ export function WorkflowCanvas() {
             }, 0);
             nodeId = maxId + 1;
         }
-    }, [loadWorkflow, setNodes, setEdges]);
+    }, [loadWorkflow, setNodes, setEdges, cleanupWorkflow]);
 
     // Sauvegarder à chaque changement
     useEffect(() => {
@@ -706,7 +801,13 @@ export function WorkflowCanvas() {
 
     const onConnect = useCallback(
         (params: Connection) => {
-            setEdges((eds) => addEdge(params, eds));
+            if (!params.source || !params.target) return;
+            setEdges((eds) => {
+                // Vérifier si un edge existe déjà entre ces deux noeuds
+                const exists = eds.some(e => e.source === params.source && e.target === params.target);
+                if (exists) return eds;
+                return addEdge({...params, type: 'floating'}, eds);
+            });
         },
         [setEdges]
     );
@@ -779,14 +880,22 @@ export function WorkflowCanvas() {
             });
 
             if (targetNode) {
-                // Créer un edge vers le nœud cible
-                const newEdge = {
-                    id: `edge_${connectingFrom.current.nodeId}_${targetNode.id}_${Date.now()}`,
-                    source: connectingFrom.current.nodeId,
-                    sourceHandle: connectingFrom.current.handleId,
-                    target: targetNode.id,
-                };
-                setEdges((eds) => addEdge(newEdge, eds));
+                // Créer un edge vers le nœud cible (si pas déjà existant)
+                const sourceId = connectingFrom.current.nodeId;
+                const targetId = targetNode.id;
+                setEdges((eds) => {
+                    // Vérifier si un edge existe déjà entre ces deux noeuds
+                    const exists = eds.some(e => e.source === sourceId && e.target === targetId);
+                    if (exists) return eds;
+                    const newEdge = {
+                        id: `edge_${sourceId}_${targetId}_${Date.now()}`,
+                        source: sourceId,
+                        sourceHandle: connectingFrom.current?.handleId,
+                        target: targetId,
+                        type: 'floating',
+                    };
+                    return addEdge(newEdge, eds);
+                });
             } else if (targetIsPane) {
                 // Snap to grid
                 const position = {
@@ -809,6 +918,7 @@ export function WorkflowCanvas() {
                     source: connectingFrom.current.nodeId,
                     sourceHandle: connectingFrom.current.handleId,
                     target: newNodeId,
+                    type: 'floating',
                 };
 
                 setNodes((nds) => [...nds, newNode]);
@@ -1057,8 +1167,10 @@ export function WorkflowCanvas() {
                     const workflow = JSON.parse(content);
 
                     if (workflow.nodes && workflow.edges) {
-                        setNodes(workflow.nodes as Node<WorkflowNodeData>[]);
-                        setEdges(workflow.edges);
+                        // Nettoyer le workflow avant de l'importer
+                        const cleaned = cleanupWorkflow(workflow.nodes as Node<WorkflowNodeData>[], workflow.edges);
+                        setNodes(cleaned.nodes as Node<WorkflowNodeData>[]);
+                        setEdges(cleaned.edges);
 
                         // Mettre à jour le compteur d'ID
                         const maxId = workflow.nodes.reduce((max: number, node: Node) => {
@@ -1074,7 +1186,7 @@ export function WorkflowCanvas() {
             };
             reader.readAsText(file);
         },
-        [setNodes, setEdges]
+        [setNodes, setEdges, cleanupWorkflow]
     );
 
     // Écouter les raccourcis clavier
@@ -1094,6 +1206,60 @@ export function WorkflowCanvas() {
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [handleCopy, handlePaste]);
+
+    // Callbacks pour le DebugPanel
+    const handleSelectNode = useCallback((nodeId: string) => {
+        setSelectedNodeId(nodeId);
+        setSelectedEdgeId(null);
+        // Sélectionner le noeud dans ReactFlow
+        setNodes(nds => nds.map(n => ({
+            ...n,
+            selected: n.id === nodeId
+        })));
+        // Centrer la vue sur le noeud
+        const node = nodes.find(n => n.id === nodeId);
+        if (node && reactFlowInstance.current) {
+            reactFlowInstance.current.setCenter(
+                node.position.x + (node.width ?? 100) / 2,
+                node.position.y + (node.height ?? 50) / 2,
+                { zoom: 1, duration: 500 }
+            );
+        }
+    }, [nodes, setNodes]);
+
+    const handleSelectEdge = useCallback((edgeId: string) => {
+        setSelectedEdgeId(edgeId);
+        setSelectedNodeId(null);
+        // Sélectionner l'edge dans ReactFlow
+        setEdges(eds => eds.map(e => ({
+            ...e,
+            selected: e.id === edgeId
+        })));
+        // Désélectionner tous les noeuds
+        setNodes(nds => nds.map(n => ({
+            ...n,
+            selected: false
+        })));
+    }, [setEdges, setNodes]);
+
+    // Synchroniser la sélection du canvas vers le DebugPanel
+    const onSelectionChange = useCallback(({ nodes: selectedNodes, edges: selectedEdges }: OnSelectionChangeParams) => {
+        // Si un noeud est sélectionné, mettre à jour selectedNodeId
+        if (selectedNodes.length > 0) {
+            setSelectedNodeId(selectedNodes[0].id);
+            setSelectedEdgeId(null);
+        }
+        // Si un edge est sélectionné (et pas de noeud), mettre à jour selectedEdgeId
+        else if (selectedEdges.length > 0) {
+            setSelectedEdgeId(selectedEdges[0].id);
+            setSelectedNodeId(null);
+        }
+        // Si rien n'est sélectionné, tout réinitialiser
+        else {
+            setSelectedNodeId(null);
+            setSelectedEdgeId(null);
+        }
+    }, []);
 
     return (
         <div className="workflow-container">
@@ -1121,6 +1287,7 @@ export function WorkflowCanvas() {
                     onInit={onInit}
                     onEdgeMouseEnter={onEdgeMouseEnter}
                     onEdgeMouseLeave={onEdgeMouseLeave}
+                    onSelectionChange={onSelectionChange}
                     onDragOver={onDragOver}
                     onDrop={onDrop}
                     nodeTypes={nodeTypes}
@@ -1142,6 +1309,20 @@ export function WorkflowCanvas() {
                     <Background variant={BackgroundVariant.Dots} gap={GRID_SIZE} size={1}/>
                 </ReactFlow>
             </div>
+
+            <DebugPanel
+                nodes={nodes}
+                edges={edges}
+                executedNodes={executedNodes}
+                activeNodes={activeNodes}
+                waitingForDecision={waitingForDecision}
+                executedEdges={executedEdges}
+                animatingEdges={animatingEdges}
+                selectedNodeId={selectedNodeId}
+                selectedEdgeId={selectedEdgeId}
+                onSelectNode={handleSelectNode}
+                onSelectEdge={handleSelectEdge}
+            />
         </div>
     );
 }

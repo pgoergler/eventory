@@ -59,15 +59,27 @@ function TriggerNodeComponent({ id, data, selected }: TriggerNodeProps) {
         height: 48,
         borderRadius: '100%',
       }}
-      onClick={handleClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      title="Démarrer le workflow"
     >
+      {/* Handles de sortie (source) */}
       <Handle type="source" position={Position.Right} id="right" />
       <Handle type="source" position={Position.Bottom} id="bottom" />
 
-      <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" className="trigger-icon">
+      {/* Handles d'entrée (target) */}
+      <Handle type="target" position={Position.Left} id="left" className="trigger-target-handle" />
+      <Handle type="target" position={Position.Top} id="top" className="trigger-target-handle" />
+
+      <svg
+        viewBox="0 0 24 24"
+        width="24"
+        height="24"
+        fill="currentColor"
+        className="trigger-icon"
+        onClick={handleClick}
+        style={{ cursor: 'pointer' }}
+      >
+        <title>Démarrer le workflow</title>
         <path d="M8 5v14l11-7z" />
       </svg>
 
