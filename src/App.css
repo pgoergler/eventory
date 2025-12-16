@@ -345,7 +345,7 @@
 
 .trigger-icon {
   color: #fff;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .trigger-label-container {
@@ -770,6 +770,34 @@
 .policy-output-node .policy-output-play:hover {
   transform: scale(1.15);
   background: #16a34a;
+}
+
+/* Bouton trigger violet - visible quand connecté */
+.policy-output-node .policy-output-trigger {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #9333ea;
+  border: 1px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s;
+  color: #fff;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.policy-output-node .policy-output-trigger:hover {
+  transform: scale(1.15);
+  background: #7c22ce;
+}
+
+/* État triggered - devient vert */
+.policy-output-node.triggered {
+  background: #22c55e !important;
+  border-color: #16a34a;
 }
 
 /* Handle de sortie sur PolicyOutputNode */

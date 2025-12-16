@@ -57,6 +57,7 @@ export function WorkflowCanvas() {
     const [executedEdges, setExecutedEdges] = useState<Set<string>>(new Set());
     const [animatingEdges, setAnimatingEdges] = useState<Set<string>>(new Set());
     const [waitingForDecision, setWaitingForDecision] = useState<Set<string>>(new Set());
+    const [triggeredOutputNodes, setTriggeredOutputNodes] = useState<Set<string>>(new Set());
     const simulationTimeouts = useRef<number[]>([]);
 
     // État pour le survol des edges
@@ -572,6 +573,21 @@ export function WorkflowCanvas() {
         [resetLinkedNodes, handleExecuteNode]
     );
 
+    // Démarrer une simulation depuis un PolicyOutputNode
+    const handleTriggerFromOutput = useCallback(
+        (outputNodeId: string) => {
+            // Réinitialiser les nœuds liés à ce point de départ
+            resetLinkedNodes(outputNodeId);
+
+            // Marquer ce nœud comme point de déclenchement (pour qu'il devienne vert)
+            setTriggeredOutputNodes((prev) => new Set([...prev, outputNodeId]));
+
+            // Exécuter ce nœud comme point de départ
+            handleExecuteNode(outputNodeId);
+        },
+        [resetLinkedNodes, handleExecuteNode]
+    );
+
     // Reset de la simulation
     const handleResetSimulation = useCallback(() => {
         // Annuler tous les timeouts en cours
@@ -585,6 +601,7 @@ export function WorkflowCanvas() {
         setExecutedEdges(new Set());
         setAnimatingEdges(new Set());
         setWaitingForDecision(new Set());
+        setTriggeredOutputNodes(new Set());
     }, []);
 
     // Mettre à jour le label d'un nœud
@@ -736,7 +753,9 @@ export function WorkflowCanvas() {
                         ...baseData,
                         isWaitingForDecision: waitingForDecision.has(outputData.parentPolicyId),
                         isConnected: connectedOutputNodes.has(node.id),
+                        isTriggered: triggeredOutputNodes.has(node.id),
                         onOutputDecision: handlePolicyDecision,
+                        onTriggerFromOutput: handleTriggerFromOutput,
                     },
                 };
             }
@@ -763,7 +782,7 @@ export function WorkflowCanvas() {
                 },
             };
         });
-    }, [nodes, executedNodes, activeNodes, hoveredEdgeNodes, waitingForDecision, connectedOutputNodes, handleExecuteNode, handleTrigger, handleLabelChange, handlePolicyDecision, handleOutputsChange]);
+    }, [nodes, executedNodes, activeNodes, hoveredEdgeNodes, waitingForDecision, connectedOutputNodes, triggeredOutputNodes, handleExecuteNode, handleTrigger, handleTriggerFromOutput, handleLabelChange, handlePolicyDecision, handleOutputsChange]);
 
     // Edges enrichis avec style selon état (sélectionné, exécuté, animé)
     const edgesWithSimulation = useMemo(() => {

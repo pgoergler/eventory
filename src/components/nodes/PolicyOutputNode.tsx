@@ -7,8 +7,10 @@ interface ExtendedPolicyOutputNodeData extends PolicyOutputNodeData {
   isExecuted?: boolean;
   isEdgeHovered?: boolean;
   isConnected?: boolean;
+  isTriggered?: boolean;
   onOutputDecision?: (parentPolicyId: string, outputId: string) => void;
   onLabelChange?: (nodeId: string, newLabel: string) => void;
+  onTriggerFromOutput?: (nodeId: string) => void;
 }
 
 function PolicyOutputNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyOutputNodeData>) {
@@ -48,9 +50,15 @@ function PolicyOutputNodeComponent({ id, data, selected }: NodeProps<ExtendedPol
     }
   }, [data]);
 
+  const handleTriggerSimulation = useCallback(() => {
+    if (data.onTriggerFromOutput) {
+      data.onTriggerFromOutput(id);
+    }
+  }, [id, data]);
+
   return (
     <div
-      className={`policy-output-node ${selected ? 'selected' : ''} ${data.isExecuted ? 'executed' : ''} ${data.isWaitingForDecision ? 'waiting-decision' : ''} ${data.isEdgeHovered ? 'edge-hovered' : ''} ${data.isConnected ? 'connected' : ''}`}
+      className={`policy-output-node ${selected ? 'selected' : ''} ${data.isExecuted ? 'executed' : ''} ${data.isWaitingForDecision ? 'waiting-decision' : ''} ${data.isEdgeHovered ? 'edge-hovered' : ''} ${data.isConnected ? 'connected' : ''} ${data.isTriggered ? 'triggered' : ''}`}
     >
       {/* Handles de sortie sur tous les côtés */}
       <Handle
@@ -96,7 +104,20 @@ function PolicyOutputNodeComponent({ id, data, selected }: NodeProps<ExtendedPol
           </span>
         )}
 
-        {/* Bouton play - visible uniquement en attente de décision */}
+        {/* Bouton trigger violet - visible quand connecté et PAS en attente */}
+        {data.isConnected && !data.isWaitingForDecision && (
+          <button
+            className="policy-output-trigger"
+            onClick={handleTriggerSimulation}
+            title={`Démarrer depuis: ${data.label}`}
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+        )}
+
+        {/* Bouton play vert - visible uniquement en attente de décision */}
         {data.isWaitingForDecision && data.isConnected && (
           <button
             className="policy-output-play"
