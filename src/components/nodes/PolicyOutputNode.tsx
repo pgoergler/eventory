@@ -52,14 +52,30 @@ function PolicyOutputNodeComponent({ id, data, selected }: NodeProps<ExtendedPol
     <div
       className={`policy-output-node ${selected ? 'selected' : ''} ${data.isExecuted ? 'executed' : ''} ${data.isWaitingForDecision ? 'waiting-decision' : ''} ${data.isEdgeHovered ? 'edge-hovered' : ''} ${data.isConnected ? 'connected' : ''}`}
     >
-      {/* Handle de sortie uniquement - à droite */}
+      {/* Handles de sortie sur tous les côtés */}
       <Handle
         type="source"
         position={Position.Right}
-        id="output"
+        id="right"
         className={`policy-output-handle ${data.isConnected ? 'connected' : ''}`}
-        isConnectableStart={!data.isConnected}
-        isConnectableEnd={false}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        className={`policy-output-handle ${data.isConnected ? 'connected' : ''}`}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="left"
+        className={`policy-output-handle ${data.isConnected ? 'connected' : ''}`}
+      />
+      <Handle
+        type="source"
+        position={Position.Top}
+        id="top"
+        className={`policy-output-handle ${data.isConnected ? 'connected' : ''}`}
       />
 
       {/* Label */}

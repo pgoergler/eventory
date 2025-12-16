@@ -2,7 +2,7 @@ import { useCallback, useState, useRef, useEffect } from 'react';
 import { useStore, useReactFlow, getBezierPath, Position } from 'reactflow';
 import type { EdgeProps, Node } from 'reactflow';
 
-const RECONNECT_HANDLE_RADIUS = 20;
+const RECONNECT_HANDLE_RADIUS = 28;
 const EXECUTED_GREEN = '#22c55e';
 const BALL_RADIUS = 6;
 
@@ -40,6 +40,11 @@ function getHandlePosition(
         };
       }
     }
+    return { x: nodeX + nodeW, y: nodeCenterY, position: Position.Right };
+  }
+
+  // Si c'est un nœud policyOutput avec l'ancien handle "output" (legacy), le traiter comme "right"
+  if (node.type === 'policyOutput' && handleId === 'output') {
     return { x: nodeX + nodeW, y: nodeCenterY, position: Position.Right };
   }
 
@@ -93,8 +98,7 @@ function getHandlePosition(
 // Trouve le handle le plus proche d'une position
 function findClosestHandle(
   node: Node,
-  pos: { x: number; y: number },
-  excludeHandleType?: 'source' | 'target'
+  pos: { x: number; y: number }
 ): string {
   const nodeX = node.positionAbsolute?.x ?? 0;
   const nodeY = node.positionAbsolute?.y ?? 0;
@@ -103,31 +107,16 @@ function findClosestHandle(
   const nodeCenterX = nodeX + nodeW / 2;
   const nodeCenterY = nodeY + nodeH / 2;
 
-  const handleBounds = (node as unknown as { handleBounds?: { source?: Array<{ id: string; x: number; y: number; width: number; height: number }>; target?: Array<{ id: string; x: number; y: number; width: number; height: number }> } }).handleBounds;
-
   const handles: Array<{ id: string; x: number; y: number; dist: number }> = [];
 
-  if (excludeHandleType !== 'target') {
-    handles.push(
-      { id: 'top', x: nodeCenterX, y: nodeY, dist: 0 },
-      { id: 'bottom', x: nodeCenterX, y: nodeY + nodeH, dist: 0 },
-      { id: 'left', x: nodeX, y: nodeCenterY, dist: 0 },
-      { id: 'right', x: nodeX + nodeW, y: nodeCenterY, dist: 0 }
-    );
-  }
-
-  if (handleBounds?.source && excludeHandleType !== 'source') {
-    handleBounds.source.forEach(h => {
-      if (!HANDLE_POSITIONS[h.id]) {
-        handles.push({
-          id: h.id,
-          x: nodeX + h.x + h.width / 2,
-          y: nodeY + h.y + h.height / 2,
-          dist: 0,
-        });
-      }
-    });
-  }
+  // Ajouter les handles standards sur les 4 côtés
+  // Ces handles sont disponibles pour source ET target sur la plupart des nœuds
+  handles.push(
+    { id: 'top', x: nodeCenterX, y: nodeY, dist: 0 },
+    { id: 'bottom', x: nodeCenterX, y: nodeY + nodeH, dist: 0 },
+    { id: 'left', x: nodeX, y: nodeCenterY, dist: 0 },
+    { id: 'right', x: nodeX + nodeW, y: nodeCenterY, dist: 0 }
+  );
 
   handles.forEach(h => {
     h.dist = Math.sqrt(Math.pow(pos.x - h.x, 2) + Math.pow(pos.y - h.y, 2));
@@ -153,6 +142,7 @@ export function FloatingEdge({
   targetHandleId,
   style,
   data,
+  selected,
   interactionWidth = 20,
 }: EdgeProps<FloatingEdgeData>) {
   const isExecuted = data?.isExecuted ?? false;
@@ -253,11 +243,7 @@ export function FloatingEdge({
     });
 
     if (nodeUnderCursor) {
-      const closestHandle = findClosestHandle(
-        nodeUnderCursor,
-        pos,
-        currentDragging === 'source' ? 'target' : 'source'
-      );
+      const closestHandle = findClosestHandle(nodeUnderCursor, pos);
       setHoveredHandle(`${nodeUnderCursor.id}:${closestHandle}`);
     } else {
       setHoveredHandle(null);
@@ -287,11 +273,7 @@ export function FloatingEdge({
     });
 
     if (targetNodeUnderCursor) {
-      const closestHandle = findClosestHandle(
-        targetNodeUnderCursor,
-        pos,
-        currentDragging === 'source' ? 'target' : 'source'
-      );
+      const closestHandle = findClosestHandle(targetNodeUnderCursor, pos);
 
       const edgeId = id;
       setEdges((edges) =>
@@ -366,10 +348,14 @@ export function FloatingEdge({
   const orangeOffset = pathLength * (1 - animProgress);
 
   // Position de la boule sur le path
+  // Utiliser animProgress pour la position, mais borner à [0, 1] pour éviter les problèmes
+  const effectiveProgress = Math.max(0, Math.min(1, animProgress));
+  const ballLength = pathLength * effectiveProgress;
+
   let ballPosition = { x: displaySx, y: displaySy };
-  if (pathRef.current && (isAnimating || animProgress > 0) && animProgress < 1) {
+  if (pathRef.current && pathLength > 0 && isAnimating) {
     try {
-      const point = pathRef.current.getPointAtLength(greenLength);
+      const point = pathRef.current.getPointAtLength(ballLength);
       ballPosition = { x: point.x, y: point.y };
     } catch {
       // Fallback si le path n'est pas encore prêt
@@ -380,7 +366,10 @@ export function FloatingEdge({
   const circleFillActive = isExecuted ? 'rgba(34, 197, 94, 0.6)' : 'rgba(255, 140, 0, 0.6)';
   const circleFillInactive = isExecuted ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255, 140, 0, 0.3)';
 
-  const showAnimation = (isAnimating || animProgress > 0) && animProgress < 1;
+  // Afficher la bille si:
+  // - L'animation est en cours (isAnimating) et pas encore terminée (animProgress < 1)
+  // - OU si isAnimating vient de passer à true (même si animProgress est encore à 1 du cycle précédent)
+  const showAnimation = isAnimating && !isExecuted;
   const showGreenPath = animProgress > 0 || isExecuted;
 
   return (
@@ -451,45 +440,46 @@ export function FloatingEdge({
         </>
       )}
 
-      {/* Handle source - draggable (caché pendant l'animation) */}
-      {!showAnimation && (
-        <circle
-          cx={displaySx}
-          cy={displaySy}
-          r={RECONNECT_HANDLE_RADIUS}
-          fill={dragging === 'source' ? circleFillActive : circleFillInactive}
-          stroke={baseColor}
-          strokeWidth={2}
-          style={{ cursor: 'move' }}
-          onMouseDown={handleMouseDown('source')}
-        />
-      )}
+      {/* Handles de réattribution - visibles uniquement si l'edge est sélectionné ou en cours de drag */}
+      {(selected || dragging) && !showAnimation && (
+        <g className="edge-reconnect-handles">
+          {/* Handle source - draggable */}
+          <circle
+            cx={displaySx}
+            cy={displaySy}
+            r={RECONNECT_HANDLE_RADIUS}
+            fill={dragging === 'source' ? circleFillActive : circleFillInactive}
+            stroke={baseColor}
+            strokeWidth={2}
+            style={{ cursor: 'move' }}
+            onMouseDown={handleMouseDown('source')}
+          />
 
-      {/* Handle target - draggable (caché pendant l'animation) */}
-      {!showAnimation && (
-        <circle
-          cx={displayTx}
-          cy={displayTy}
-          r={RECONNECT_HANDLE_RADIUS}
-          fill={dragging === 'target' ? circleFillActive : circleFillInactive}
-          stroke={baseColor}
-          strokeWidth={2}
-          style={{ cursor: 'move' }}
-          onMouseDown={handleMouseDown('target')}
-        />
-      )}
+          {/* Handle target - draggable */}
+          <circle
+            cx={displayTx}
+            cy={displayTy}
+            r={RECONNECT_HANDLE_RADIUS}
+            fill={dragging === 'target' ? circleFillActive : circleFillInactive}
+            stroke={baseColor}
+            strokeWidth={2}
+            style={{ cursor: 'move' }}
+            onMouseDown={handleMouseDown('target')}
+          />
 
-      {/* Indicateur du handle survolé pendant le drag */}
-      {hoveredHandle && dragging && (
-        <circle
-          cx={dragPos?.x ?? 0}
-          cy={dragPos?.y ?? 0}
-          r={8}
-          fill={baseColor}
-          stroke="#fff"
-          strokeWidth={2}
-          style={{ pointerEvents: 'none' }}
-        />
+          {/* Indicateur du handle survolé pendant le drag */}
+          {hoveredHandle && dragging && (
+            <circle
+              cx={dragPos?.x ?? 0}
+              cy={dragPos?.y ?? 0}
+              r={8}
+              fill={baseColor}
+              stroke="#fff"
+              strokeWidth={2}
+              style={{ pointerEvents: 'none' }}
+            />
+          )}
+        </g>
       )}
     </g>
   );

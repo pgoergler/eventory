@@ -83,18 +83,29 @@ function PolicyNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyNod
         backgroundColor: nodeColor,
       }}
     >
-      {/* Handle d'entrée haut */}
+      {/* Handles d'entrée (target) sur tous les côtés */}
       <Handle
         type="target"
         position={Position.Top}
         id="top"
         className="policy-input-handle"
       />
-      {/* Handle d'entrée gauche */}
       <Handle
         type="target"
         position={Position.Left}
         id="left"
+        className="policy-input-handle"
+      />
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        id="bottom"
+        className="policy-input-handle"
+      />
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="right"
         className="policy-input-handle"
       />
 
