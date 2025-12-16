@@ -4,6 +4,7 @@ import type { EdgeProps, Node } from 'reactflow';
 
 // Rayon des zones de reconnexion
 const RECONNECT_HANDLE_RADIUS = 20;
+const EXECUTED_GREEN = '#22c55e';
 
 // Détermine le bord le plus pertinent et retourne le centre de ce bord
 function getClosestEdgeCenter(node: Node, otherNode: Node): { x: number; y: number; position: Position } {
@@ -67,14 +68,20 @@ function getEdgeParams(source: Node, target: Node) {
   };
 }
 
+interface FloatingEdgeData {
+  isExecuted?: boolean;
+}
+
 export function FloatingEdge({
   id,
   source,
   target,
-  markerEnd,
   style,
+  data,
   interactionWidth = 20,
-}: EdgeProps) {
+}: EdgeProps<FloatingEdgeData>) {
+  const isExecuted = data?.isExecuted ?? false;
+  const baseColor = isExecuted ? EXECUTED_GREEN : '#FF8C00';
   const { setEdges, getNodes, screenToFlowPosition } = useReactFlow();
   const [dragging, setDragging] = useState<'source' | 'target' | null>(null);
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
@@ -202,6 +209,11 @@ export function FloatingEdge({
     targetY: displayTy,
   });
 
+  // Couleurs pour les cercles et la zone d'interaction
+  const interactionColor = isExecuted ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 140, 0, 0.2)';
+  const circleFillActive = isExecuted ? 'rgba(34, 197, 94, 0.6)' : 'rgba(255, 140, 0, 0.6)';
+  const circleFillInactive = isExecuted ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255, 140, 0, 0.3)';
+
   return (
     <g className="react-flow__edge-floating">
       {/* Path d'interaction (zone cliquable élargie) */}
@@ -210,14 +222,13 @@ export function FloatingEdge({
         fill="none"
         strokeWidth={interactionWidth}
         className="react-flow__edge-interaction"
-        stroke="transparent"
+        stroke={interactionColor}
       />
       {/* Path visible */}
       <path
         id={id}
         className="react-flow__edge-path"
         d={edgePath}
-        markerEnd={markerEnd}
         style={style}
       />
       {/* Handle source - draggable */}
@@ -225,8 +236,8 @@ export function FloatingEdge({
         cx={displaySx}
         cy={displaySy}
         r={RECONNECT_HANDLE_RADIUS}
-        fill={dragging === 'source' ? 'rgba(255, 140, 0, 0.6)' : 'rgba(255, 140, 0, 0.3)'}
-        stroke="#FF8C00"
+        fill={dragging === 'source' ? circleFillActive : circleFillInactive}
+        stroke={baseColor}
         strokeWidth={2}
         style={{ cursor: 'move' }}
         onMouseDown={handleMouseDown('source')}
@@ -236,8 +247,8 @@ export function FloatingEdge({
         cx={displayTx}
         cy={displayTy}
         r={RECONNECT_HANDLE_RADIUS}
-        fill={dragging === 'target' ? 'rgba(255, 140, 0, 0.6)' : 'rgba(255, 140, 0, 0.3)'}
-        stroke="#FF8C00"
+        fill={dragging === 'target' ? circleFillActive : circleFillInactive}
+        stroke={baseColor}
         strokeWidth={2}
         style={{ cursor: 'move' }}
         onMouseDown={handleMouseDown('target')}

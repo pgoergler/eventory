@@ -149,6 +149,7 @@
 
 /* Nœuds personnalisés - Style Event Storming */
 .base-node {
+  position: relative;
   width: 120px;
   height: 80px;
   border: none;
@@ -232,6 +233,30 @@
   50% {
     box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
   }
+}
+
+/* Spinner de chargement */
+.node-loading-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(0, 0, 0, 0.6);
+  animation: spin 1s linear infinite;
+  z-index: 5;
+}
+
+@keyframes spin {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+.base-node.loading .node-content {
+  opacity: 0.4;
 }
 
 /* Trigger Node */
@@ -363,9 +388,8 @@
   stroke-width: 2;
 }
 
-/* Debug: visualiser la zone d'interaction des edges */
+/* Zone d'interaction des edges (couleur définie dynamiquement) */
 .react-flow__edge-interaction {
-  stroke: rgba(255, 140, 0, 0.2);
   fill: transparent;
 }
 
@@ -417,4 +441,287 @@
 
 .react-flow__background {
   background: #16162a;
+}
+
+/* Policy Node */
+.policy-node {
+  position: relative;
+  min-width: 160px;
+  border: none;
+  border-radius: 8px;
+  box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+  transition: box-shadow 0.2s ease, transform 0.1s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+}
+
+.policy-node:hover {
+  transform: scale(1.02);
+}
+
+.policy-node.selected {
+  box-shadow: 0 0 0 3px #fff, 2px 2px 12px rgba(0, 0, 0, 0.4);
+}
+
+.policy-node.waiting-decision {
+  animation: policy-pulse 1.5s infinite;
+}
+
+@keyframes policy-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(147, 51, 234, 0);
+  }
+}
+
+.policy-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.policy-header {
+  text-align: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.policy-label {
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: text;
+  text-align: center;
+  word-wrap: break-word;
+  line-height: 1.3;
+}
+
+.policy-label-input {
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  border-radius: 2px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  outline: none;
+  width: 100%;
+  text-align: center;
+  padding: 2px 4px;
+}
+
+/* Liste des sorties */
+.policy-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.policy-output-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  position: relative;
+  margin-right: 12px;
+}
+
+.policy-output-row.disconnected {
+  opacity: 0.6;
+}
+
+.policy-output-row.connected {
+  opacity: 1;
+}
+
+.policy-output-row.executed {
+  background: rgba(34, 197, 94, 0.3);
+}
+
+.policy-output-label {
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  flex: 1;
+  text-align: right;
+}
+
+/* Bouton play pour choisir la sortie */
+.policy-output-play {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid #fff;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.policy-output-play:hover {
+  transform: scale(1.15);
+  background: #16a34a;
+}
+
+/* Handle de sortie positionné à droite de chaque ligne */
+.policy-output-row .react-flow__handle {
+  position: absolute;
+  right: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #9333ea;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.policy-output-row .react-flow__handle.connected {
+  background: #9333ea;
+  border-color: #fff;
+}
+
+.policy-output-row.disconnected .react-flow__handle {
+  opacity: 0.5;
+}
+
+.policy-node.selected .policy-output-row .react-flow__handle,
+.policy-node.edge-hovered .policy-output-row .react-flow__handle {
+  opacity: 1;
+}
+
+/* Éditeur de sorties pour Policy */
+.policy-outputs-editor {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+}
+
+.policy-edit-outputs-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #252542;
+  border: 2px solid #fff;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.policy-edit-outputs-button:hover {
+  background: #3d3d5c;
+  transform: scale(1.1);
+}
+
+.policy-outputs-list {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  background: #1a1a2e;
+  border: 1px solid #3d3d5c;
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 150px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.policy-output-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.policy-output-input {
+  flex: 1;
+  background: #252542;
+  border: 1px solid #3d3d5c;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.policy-output-input:focus {
+  border-color: #9333ea;
+}
+
+.policy-output-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.policy-remove-output {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: #3d2033;
+  border: none;
+  color: #ff6b6b;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.policy-remove-output:hover {
+  background: #4d2843;
+}
+
+.policy-add-output {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #252542;
+  border: 1px solid #3d3d5c;
+  color: #9333ea;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.policy-add-output:hover {
+  background: #3d3d5c;
+}
+
+/* Policy node loading state */
+.policy-node.loading .policy-content {
+  opacity: 0.4;
+}
+
+/* Policy handles d'entrée */
+.policy-node > .react-flow__handle {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.react-flow__node.selected .policy-node > .react-flow__handle,
+.policy-node.edge-hovered > .react-flow__handle {
+  opacity: 0.6;
+  pointer-events: auto;
+}
+
+.react-flow__node.selected .policy-node > .react-flow__handle:hover,
+.policy-node.edge-hovered > .react-flow__handle:hover {
+  opacity: 1;
+  background: #9333ea;
 }
