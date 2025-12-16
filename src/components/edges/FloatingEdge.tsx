@@ -27,7 +27,7 @@ function getHandlePosition(
   const nodeCenterX = nodeX + nodeW / 2;
   const nodeCenterY = nodeY + nodeH / 2;
 
-  // Si c'est un nœud policy avec un handle de sortie spécifique
+  // Si c'est un nœud policy avec un handle de sortie spécifique (legacy)
   if (node.type === 'policy' && handleId && !HANDLE_POSITIONS[handleId]) {
     const handleBounds = (node as unknown as { handleBounds?: { source?: Array<{ id: string; x: number; y: number; width: number; height: number }> } }).handleBounds;
     if (handleBounds?.source) {
