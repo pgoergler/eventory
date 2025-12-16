@@ -11,3 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+
+.claude
+CLAUDE.md
+.mcp.json
