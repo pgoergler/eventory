@@ -1,10 +1,7 @@
 import { useCallback, useState, useRef, useEffect } from 'react';
 import { useStore, useReactFlow, getBezierPath, Position } from 'reactflow';
 import type { EdgeProps, Node } from 'reactflow';
-
-const RECONNECT_HANDLE_RADIUS = 28;
-const EXECUTED_GREEN = '#22c55e';
-const BALL_RADIUS = 6;
+import { RECONNECT_HANDLE_RADIUS, EXECUTED_GREEN, BALL_RADIUS } from '../../constants/workflow';
 
 // Positions des handles standards
 const HANDLE_POSITIONS: Record<string, Position> = {

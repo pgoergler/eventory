@@ -24,22 +24,21 @@ import {Sidebar} from './Sidebar';
 import {DebugPanel} from './DebugPanel';
 import {useWorkflowStorage} from '../hooks/useWorkflowStorage';
 import type {PolicyNodeData, PolicyOutput, PolicyOutputNodeData, WorkflowNodeData} from '../types/workflow';
-
-const GRID_SIZE = 20;
-const EXECUTED_GREEN = '#22c55e';
-const SIMULATION_DELAY = 1000; // 1 secondes de délai entre chaque étape
-
-// Constantes pour le positionnement des PolicyOutputNodes
-const POLICY_OUTPUT_OFFSET_X = 180;
-const POLICY_OUTPUT_SPACING_Y = 60;
-const MAX_GAP = 10; // Espacement maximum entre les bords du nœud secondaire et du principal
+import {
+    GRID_SIZE,
+    EXECUTED_GREEN,
+    SIMULATION_DELAY,
+    POLICY_OUTPUT_OFFSET_X,
+    POLICY_OUTPUT_SPACING_Y,
+    MAX_GAP,
+    PASTE_OFFSET,
+} from '../constants/workflow';
+import { useSimulation } from '../hooks/useSimulation';
 
 let nodeId = 0;
 const getNodeId = () => `node_${nodeId++}`;
 
 const initialNodes: Node<WorkflowNodeData>[] = [];
-
-const PASTE_OFFSET = 40; // Décalage lors du collage
 
 export function WorkflowCanvas() {
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -51,14 +50,21 @@ export function WorkflowCanvas() {
     const edgeReconnectSuccessful = useRef(true);
     const {saveWorkflow, loadWorkflow, clearWorkflow} = useWorkflowStorage();
 
-    // État de simulation
-    const [executedNodes, setExecutedNodes] = useState<Set<string>>(new Set());
-    const [activeNodes, setActiveNodes] = useState<Set<string>>(new Set());
-    const [executedEdges, setExecutedEdges] = useState<Set<string>>(new Set());
-    const [animatingEdges, setAnimatingEdges] = useState<Set<string>>(new Set());
-    const [waitingForDecision, setWaitingForDecision] = useState<Set<string>>(new Set());
-    const [triggeredOutputNodes, setTriggeredOutputNodes] = useState<Set<string>>(new Set());
-    const simulationTimeouts = useRef<number[]>([]);
+    // Simulation state and functions
+    const {
+        executedNodes,
+        activeNodes,
+        executedEdges,
+        animatingEdges,
+        waitingForDecision,
+        triggeredOutputNodes,
+        handleExecuteNode,
+        handlePolicyDecision,
+        handleTrigger,
+        handleTriggerFromOutput,
+        handleResetSimulation,
+        isSimulationActive,
+    } = useSimulation({ nodes, edges });
 
     // État pour le survol des edges
     const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
@@ -331,278 +337,6 @@ export function WorkflowCanvas() {
         },
         [nodes, onNodesChange, setNodes]
     );
-
-    // Trouver tous les nœuds liés à un nœud source (en suivant les edges)
-    const getLinkedNodes = useCallback(
-        (sourceNodeId: string): Set<string> => {
-            const linkedNodes = new Set<string>();
-            const visited = new Set<string>();
-            const queue = [sourceNodeId];
-
-            while (queue.length > 0) {
-                const currentId = queue.shift()!;
-                if (visited.has(currentId)) continue;
-                visited.add(currentId);
-
-                // Trouver les nœuds connectés via les edges sortants
-                const outgoingEdges = edges.filter((e) => e.source === currentId);
-                for (const edge of outgoingEdges) {
-                    if (!visited.has(edge.target)) {
-                        linkedNodes.add(edge.target);
-                        queue.push(edge.target);
-                    }
-                }
-            }
-
-            return linkedNodes;
-        },
-        [edges]
-    );
-
-    // Réinitialiser les nœuds liés à un trigger
-    const resetLinkedNodes = useCallback(
-        (triggerNodeId: string) => {
-            const linkedNodes = getLinkedNodes(triggerNodeId);
-
-            // Annuler les timeouts en cours
-            simulationTimeouts.current.forEach((timeoutId) => {
-                window.clearTimeout(timeoutId);
-            });
-            simulationTimeouts.current = [];
-
-            // Retirer les nœuds liés des états de simulation
-            setExecutedNodes((prev) => {
-                const next = new Set(prev);
-                linkedNodes.forEach((id) => next.delete(id));
-                return next;
-            });
-            setActiveNodes((prev) => {
-                const next = new Set(prev);
-                linkedNodes.forEach((id) => next.delete(id));
-                return next;
-            });
-            setWaitingForDecision((prev) => {
-                const next = new Set(prev);
-                linkedNodes.forEach((id) => next.delete(id));
-                return next;
-            });
-
-            // Retirer les edges liés
-            const linkedEdgeIds = edges
-                .filter((e) => linkedNodes.has(e.source) || e.source === triggerNodeId)
-                .map((e) => e.id);
-            setExecutedEdges((prev) => {
-                const next = new Set(prev);
-                linkedEdgeIds.forEach((id) => next.delete(id));
-                return next;
-            });
-            setAnimatingEdges((prev) => {
-                const next = new Set(prev);
-                linkedEdgeIds.forEach((id) => next.delete(id));
-                return next;
-            });
-        },
-        [edges, getLinkedNodes]
-    );
-
-    // Exécuter un nœud (simulation)
-    const handleExecuteNode = useCallback(
-        (nodeIdToExecute: string) => {
-            const nodeToExecute = nodes.find((n) => n.id === nodeIdToExecute);
-
-            // Vérifier si c'est un nœud policy - il doit attendre une décision manuelle
-            if (nodeToExecute?.type === 'policy') {
-                setWaitingForDecision((prev) => new Set([...prev, nodeIdToExecute]));
-                return; // Ne pas continuer automatiquement
-            }
-
-            // Marquer le nœud comme exécuté
-            setExecutedNodes((prev) => new Set([...prev, nodeIdToExecute]));
-            setActiveNodes((prev) => {
-                const next = new Set(prev);
-                next.delete(nodeIdToExecute);
-                return next;
-            });
-
-            // Trouver tous les edges sortants
-            const outgoingEdges = edges.filter((e) => e.source === nodeIdToExecute);
-
-            if (outgoingEdges.length > 0) {
-                // Démarrer l'animation sur TOUS les edges sortants
-                const outgoingEdgeIds = outgoingEdges.map((e) => e.id);
-                setAnimatingEdges((prev) => new Set([...prev, ...outgoingEdgeIds]));
-
-                // Programmer la fin de l'animation pour chaque edge
-                outgoingEdges.forEach((edge) => {
-                    const targetNode = nodes.find((n) => n.id === edge.target);
-                    const isTargetTrigger = targetNode?.type === 'trigger';
-
-                    const timeoutId = window.setTimeout(() => {
-                        // Marquer l'edge comme exécuté (fin de l'animation)
-                        setAnimatingEdges((prev) => {
-                            const next = new Set(prev);
-                            next.delete(edge.id);
-                            return next;
-                        });
-                        setExecutedEdges((prev) => new Set([...prev, edge.id]));
-
-                        // Exécuter le nœud suivant SAUF si c'est un trigger
-                        if (!isTargetTrigger) {
-                            handleExecuteNode(edge.target);
-                        }
-                    }, SIMULATION_DELAY);
-                    simulationTimeouts.current.push(timeoutId);
-                });
-            }
-        },
-        [edges, nodes]
-    );
-
-    // Gérer la décision d'un nœud policy (appelé depuis un PolicyOutputNode)
-    const handlePolicyDecision = useCallback(
-        (parentPolicyId: string, outputId: string) => {
-            // Trouver le PolicyOutputNode correspondant
-            const outputNode = nodes.find(
-                n => n.type === 'policyOutput' &&
-                    (n.data as PolicyOutputNodeData).parentPolicyId === parentPolicyId &&
-                    (n.data as PolicyOutputNodeData).outputId === outputId
-            );
-
-            if (!outputNode) return;
-
-            // Trouver tous les PolicyOutputNodes de ce PolicyNode
-            const allOutputNodes = nodes.filter(
-                n => n.type === 'policyOutput' &&
-                    (n.data as PolicyOutputNodeData).parentPolicyId === parentPolicyId
-            );
-
-            // Réinitialiser les nœuds liés à TOUTES les sorties (y compris celle choisie, pour gérer les boucles)
-            const allLinkedNodes = new Set<string>();
-            const allLinkedEdgeIds = new Set<string>();
-
-            for (const policyOutput of allOutputNodes) {
-                // Trouver les nœuds liés à cette sortie
-                const linkedNodes = getLinkedNodes(policyOutput.id);
-                linkedNodes.forEach((id) => allLinkedNodes.add(id));
-
-                // Trouver les edges liés à ces nœuds et à la sortie elle-même
-                edges
-                    .filter((e) => linkedNodes.has(e.source) || linkedNodes.has(e.target) || e.source === policyOutput.id)
-                    .forEach((e) => allLinkedEdgeIds.add(e.id));
-            }
-
-            // Réinitialiser tous ces nœuds
-            setExecutedNodes((prev) => {
-                const next = new Set(prev);
-                allLinkedNodes.forEach((id) => next.delete(id));
-                return next;
-            });
-            setActiveNodes((prev) => {
-                const next = new Set(prev);
-                allLinkedNodes.forEach((id) => next.delete(id));
-                return next;
-            });
-            setWaitingForDecision((prev) => {
-                const next = new Set(prev);
-                allLinkedNodes.forEach((id) => next.delete(id));
-                return next;
-            });
-
-            // Réinitialiser tous les edges
-            setExecutedEdges((prev) => {
-                const next = new Set(prev);
-                allLinkedEdgeIds.forEach((id) => next.delete(id));
-                return next;
-            });
-            setAnimatingEdges((prev) => {
-                const next = new Set(prev);
-                allLinkedEdgeIds.forEach((id) => next.delete(id));
-                return next;
-            });
-
-            // Retirer le PolicyNode de l'état d'attente
-            setWaitingForDecision((prev) => {
-                const next = new Set(prev);
-                next.delete(parentPolicyId);
-                return next;
-            });
-
-            // Marquer le PolicyNode comme exécuté
-            setExecutedNodes((prev) => new Set([...prev, parentPolicyId]));
-
-            // Trouver l'edge qui part du PolicyOutputNode
-            const chosenEdge = edges.find((e) => e.source === outputNode.id);
-
-            if (chosenEdge) {
-                const targetNode = nodes.find((n) => n.id === chosenEdge.target);
-                const isTargetTrigger = targetNode?.type === 'trigger';
-
-                // Démarrer l'animation sur l'edge
-                setAnimatingEdges((prev) => new Set([...prev, chosenEdge.id]));
-
-                // Programmer la fin de l'animation
-                const timeoutId = window.setTimeout(() => {
-                    // Marquer l'edge comme exécuté
-                    setAnimatingEdges((prev) => {
-                        const next = new Set(prev);
-                        next.delete(chosenEdge.id);
-                        return next;
-                    });
-                    setExecutedEdges((prev) => new Set([...prev, chosenEdge.id]));
-
-                    // Exécuter le nœud suivant SAUF si c'est un trigger
-                    if (!isTargetTrigger) {
-                        handleExecuteNode(chosenEdge.target);
-                    }
-                }, SIMULATION_DELAY);
-                simulationTimeouts.current.push(timeoutId);
-            }
-        },
-        [edges, nodes, handleExecuteNode, getLinkedNodes]
-    );
-
-    // Gérer le déclenchement d'un trigger (avec reset des nœuds liés)
-    const handleTrigger = useCallback(
-        (triggerId: string) => {
-            // D'abord réinitialiser les nœuds liés
-            resetLinkedNodes(triggerId);
-
-            // Puis exécuter le trigger
-            handleExecuteNode(triggerId);
-        },
-        [resetLinkedNodes, handleExecuteNode]
-    );
-
-    // Démarrer une simulation depuis un PolicyOutputNode
-    const handleTriggerFromOutput = useCallback(
-        (outputNodeId: string) => {
-            // Réinitialiser les nœuds liés à ce point de départ
-            resetLinkedNodes(outputNodeId);
-
-            // Marquer ce nœud comme point de déclenchement (pour qu'il devienne vert)
-            setTriggeredOutputNodes((prev) => new Set([...prev, outputNodeId]));
-
-            // Exécuter ce nœud comme point de départ
-            handleExecuteNode(outputNodeId);
-        },
-        [resetLinkedNodes, handleExecuteNode]
-    );
-
-    // Reset de la simulation
-    const handleResetSimulation = useCallback(() => {
-        // Annuler tous les timeouts en cours
-        simulationTimeouts.current.forEach((timeoutId) => {
-            window.clearTimeout(timeoutId);
-        });
-        simulationTimeouts.current = [];
-
-        setExecutedNodes(new Set());
-        setActiveNodes(new Set());
-        setExecutedEdges(new Set());
-        setAnimatingEdges(new Set());
-        setWaitingForDecision(new Set());
-        setTriggeredOutputNodes(new Set());
-    }, []);
 
     // Mettre à jour le label d'un nœud
     const handleLabelChange = useCallback(
@@ -1288,7 +1022,7 @@ export function WorkflowCanvas() {
                 onExport={handleExport}
                 onImport={handleImport}
                 onResetSimulation={handleResetSimulation}
-                isSimulationActive={executedNodes.size > 0 || activeNodes.size > 0 || animatingEdges.size > 0 || waitingForDecision.size > 0}
+                isSimulationActive={isSimulationActive}
             />
 
             <div className="canvas-wrapper" ref={reactFlowWrapper}>

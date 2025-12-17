@@ -1,8 +1,8 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { BaseNodeData } from '../../types/workflow';
-
-const EXECUTED_GREEN = '#22c55e';
+import { useLabelEditing } from '../../hooks/useLabelEditing';
+import { EXECUTED_GREEN } from '../../constants/workflow';
 
 interface ExtendedNodeData extends BaseNodeData {
   isActive?: boolean;
@@ -18,35 +18,11 @@ interface BaseNodeProps extends NodeProps<ExtendedNodeData> {
 }
 
 function BaseNodeComponent({ id, data, selected, color = '#FF8C00' }: BaseNodeProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [label, setLabel] = useState(data.label);
-
-  const handleDoubleClick = useCallback(() => {
-    setIsEditing(true);
-  }, []);
-
-  const handleBlur = useCallback(() => {
-    setIsEditing(false);
-    if (data.onLabelChange) {
-      data.onLabelChange(id, label);
-    }
-  }, [id, data, label]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        setIsEditing(false);
-        if (data.onLabelChange) {
-          data.onLabelChange(id, label);
-        }
-      }
-      if (e.key === 'Escape') {
-        setLabel(data.label);
-        setIsEditing(false);
-      }
-    },
-    [id, data, label]
-  );
+  const { label, isEditing, setLabel, handleDoubleClick, handleBlur, handleKeyDown } = useLabelEditing({
+    id,
+    initialLabel: data.label,
+    onLabelChange: data.onLabelChange,
+  });
 
   const handleExecute = useCallback(() => {
     if (data.onExecute) {

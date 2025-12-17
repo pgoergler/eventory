@@ -1,9 +1,8 @@
 import { memo, useCallback, useState } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { PolicyNodeData, PolicyOutput } from '../../types/workflow';
-
-const POLICY_PURPLE = '#9333ea';
-const EXECUTED_GREEN = '#22c55e';
+import { useLabelEditing } from '../../hooks/useLabelEditing';
+import { POLICY_PURPLE, EXECUTED_GREEN } from '../../constants/workflow';
 
 interface ExtendedPolicyNodeData extends PolicyNodeData {
   isActive?: boolean;
@@ -16,36 +15,12 @@ interface ExtendedPolicyNodeData extends PolicyNodeData {
 }
 
 function PolicyNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyNodeData>) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [label, setLabel] = useState(data.label);
+  const { label, isEditing, setLabel, handleDoubleClick, handleBlur, handleKeyDown } = useLabelEditing({
+    id,
+    initialLabel: data.label,
+    onLabelChange: data.onLabelChange,
+  });
   const [isEditingOutputs, setIsEditingOutputs] = useState(false);
-
-  const handleDoubleClick = useCallback(() => {
-    setIsEditing(true);
-  }, []);
-
-  const handleBlur = useCallback(() => {
-    setIsEditing(false);
-    if (data.onLabelChange) {
-      data.onLabelChange(id, label);
-    }
-  }, [id, data, label]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        setIsEditing(false);
-        if (data.onLabelChange) {
-          data.onLabelChange(id, label);
-        }
-      }
-      if (e.key === 'Escape') {
-        setLabel(data.label);
-        setIsEditing(false);
-      }
-    },
-    [id, data, label]
-  );
 
   const handleAddOutput = useCallback(() => {
     const newOutput: PolicyOutput = {

@@ -1,6 +1,7 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import type { PolicyOutputNodeData } from '../../types/workflow';
+import { useLabelEditing } from '../../hooks/useLabelEditing';
 
 interface ExtendedPolicyOutputNodeData extends PolicyOutputNodeData {
   isWaitingForDecision?: boolean;
@@ -14,35 +15,11 @@ interface ExtendedPolicyOutputNodeData extends PolicyOutputNodeData {
 }
 
 function PolicyOutputNodeComponent({ id, data, selected }: NodeProps<ExtendedPolicyOutputNodeData>) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [label, setLabel] = useState(data.label);
-
-  const handleDoubleClick = useCallback(() => {
-    setIsEditing(true);
-  }, []);
-
-  const handleBlur = useCallback(() => {
-    setIsEditing(false);
-    if (data.onLabelChange) {
-      data.onLabelChange(id, label);
-    }
-  }, [id, data, label]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        setIsEditing(false);
-        if (data.onLabelChange) {
-          data.onLabelChange(id, label);
-        }
-      }
-      if (e.key === 'Escape') {
-        setLabel(data.label);
-        setIsEditing(false);
-      }
-    },
-    [id, data, label]
-  );
+  const { label, isEditing, setLabel, handleDoubleClick, handleBlur, handleKeyDown } = useLabelEditing({
+    id,
+    initialLabel: data.label,
+    onLabelChange: data.onLabelChange,
+  });
 
   const handleDecision = useCallback(() => {
     if (data.onOutputDecision) {
